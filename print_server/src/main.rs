@@ -14,7 +14,7 @@ use types::FaxMessage;
 #[tokio::main]
 async fn main() {
     let app = Router::new().route("/fax", post(fax_message));
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:3000")
         .await
         .unwrap();
     axum::serve(listener, app).await.unwrap();
