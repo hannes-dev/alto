@@ -2,14 +2,14 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::routing::post;
 use axum::{Json, Router};
+
 use escpos::driver::*;
 use escpos::errors::PrinterError;
 use escpos::printer::Printer;
 use escpos::printer_options::PrinterOptions;
 use escpos::utils::*;
 
-use chrono::{self, DateTime, Local};
-use serde::Deserialize;
+use types::FaxMessage;
 
 #[tokio::main]
 async fn main() {
@@ -45,14 +45,14 @@ fn print_message(fax: FaxMessage) -> Result<(), PrinterError> {
 
 enum Error {
     PrinterError(PrinterError),
-    Other(String),
+    // Other(String),
 }
 
 impl IntoResponse for Error {
     fn into_response(self) -> axum::response::Response {
         let msg = match self {
             Error::PrinterError(e) => format!("Printer Error: {}", e),
-            Error::Other(e) => e,
+            // Error::Other(e) => e,
         };
 
         (StatusCode::INTERNAL_SERVER_ERROR, msg).into_response()
@@ -63,12 +63,4 @@ impl From<PrinterError> for Error {
     fn from(e: PrinterError) -> Self {
         Error::PrinterError(e)
     }
-}
-
-#[derive(Debug, Deserialize)]
-struct FaxMessage {
-    time: DateTime<Local>,
-    message: String,
-    from: String,
-    ip: String,
 }

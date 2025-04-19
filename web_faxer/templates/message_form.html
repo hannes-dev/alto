@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>Send a Message</title>
+        <style>
+            body {
+                font-family: sans-serif;
+                background-color: #1e1e1e;
+                color: #f0f0f0;
+                margin: 0;
+                padding: 20px;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 100vh;
+            }
+
+            .container {
+                max-width: 600px;
+                width: 100%;
+                padding: 20px;
+                background-color: #2a2a2a;
+                border-radius: 8px;
+                box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+            }
+
+            h1 {
+                color: #ed6104;
+                text-align: center;
+                margin-bottom: 20px;
+            }
+
+            form {
+                display: flex;
+                flex-direction: column;
+            }
+
+            label {
+                margin-bottom: 8px;
+                font-weight: bold;
+            }
+
+            textarea {
+                width: 100%;
+                padding: 10px;
+                margin-bottom: 20px;
+                border: 1px solid #555;
+                background-color: #333;
+                color: #f0f0f0;
+                border-radius: 4px;
+                resize: vertical;
+                box-sizing: border-box;
+                min-height: 100px;
+                max-height: 200px;
+                rows: 5;
+            }
+
+            button {
+                background-color: #ed6104;
+                color: #1e1e1e;
+                padding: 12px 20px;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                transition: background-color 0.3s ease;
+            }
+
+            button:hover {
+                background-color: #ff7d1e;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Hello {{ name }}</h1>
+            <form action="/message" method="POST">
+                <label for="message">Your Message:</label>
+                <textarea
+                    id="message"
+                    name="message"
+                    required
+                    placeholder="Enter your message here..."
+                ></textarea>
+                <button type="submit">Send Message</button>
+            </form>
+        </div>
+    </body>
+</html>

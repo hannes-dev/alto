@@ -1,0 +1,7 @@
+[workspace]
+resolver = "3"
+members = [
+    "print_server",
+    "web_faxer",
+    "types",
+]
