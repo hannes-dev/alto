@@ -4,8 +4,11 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-axum = { version = "0.8.3", default-features = false, features = ["http1", "json", "tokio"] }
+axum = { version = "0.8.3", default-features = false, features = ["http1", "json", "tokio", "form"] }
 tokio = { version = "1", features = ["rt-multi-thread", "net", "macros"], default-features = false }
 serde = { version = "1", features = ["derive"], default-features = false }
 serde_json = { version = "1", features = ["std"], default-features = false }
-sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio", "macros"], default-features = false }
+chrono = "0.4.41"
+reqwest = { version = "0.12",  default-features = false, features = ["json", "rustls-tls"] }
+
+types = { path = "../types" }

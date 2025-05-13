@@ -1,7 +1,7 @@
 use chrono::{DateTime, Local};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct FaxMessage {
     pub time: DateTime<Local>,
     pub message: String,

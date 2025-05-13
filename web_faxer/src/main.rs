@@ -1,38 +1,72 @@
 use axum::{
-    Router,
-    extract::{Path, State},
+    Form, Router,
+    extract::{ConnectInfo, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
-    routing::get,
+    routing::{get, post},
 };
-use sqlx::{Pool, Sqlite, SqlitePool, prelude::FromRow};
+use chrono::{DateTime, Days, Duration, Local, NaiveDateTime, NaiveTime, TimeDelta};
+use serde::Deserialize;
+use tokio::sync::Mutex;
+use types::FaxMessage;
+
+use std::{collections::HashMap, sync::Arc};
+use std::{fs::read_to_string, net::SocketAddr};
 
 #[tokio::main]
 async fn main() {
-    let db_pool = SqlitePool::connect_lazy("sqlite:web_faxer.db").unwrap();
-    make_db(&db_pool).await;
-
+    let users = Arc::new(Mutex::new(get_users()));
     let index = include_str!("../templates/index.html").to_string();
     let message_form = include_str!("../templates/message_form.html").to_string();
+    let success = include_str!("../templates/success.html").to_string();
     let timeout = include_str!("../templates/timeout.html").to_string();
 
     let pages = Pages {
         index,
         message_form,
         timeout,
+        success,
     };
 
-    let app_state = AppState { db_pool, pages };
+    let app_state = AppState { users, pages };
 
     let app = Router::new()
         .route("/", get(index_page))
-        .route("/message/{uuid}", get(message_form_page))
+        .route(
+            "/message/{uuid}",
+            get(message_form_page).post(message_form_post),
+        )
         .route("/timeout", get(timeout_page))
         .with_state(app_state);
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:3000")
-        .await
-        .unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = tokio::net::TcpListener::bind("0.0.0.0:8000").await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
+}
+
+fn get_users() -> HashMap<String, User> {
+    let mut map = HashMap::new();
+    for line in read_to_string("user_list.txt")
+        .expect("no user list")
+        .lines()
+        .filter(|x| !x.is_empty())
+    {
+        let mut user = line.split(":");
+        let uuid = user.next().unwrap().to_string();
+        let name = user.next().unwrap().to_string();
+        map.insert(
+            uuid,
+            User {
+                name,
+                last_message: Local::now() - Duration::weeks(1),
+            },
+        );
+    }
+
+    map
 }
 
 async fn index_page(State(state): State<AppState>) -> impl IntoResponse {
@@ -43,48 +77,103 @@ async fn message_form_page(
     State(state): State<AppState>,
     Path(uuid): Path<String>,
 ) -> Result<impl IntoResponse, StatusCode> {
-    let user = sqlx::query_as::<_, User>("SELECT name FROM users WHERE id = ?")
-        .bind(uuid)
-        .fetch_optional(&state.db_pool)
-        .await
-        .unwrap();
-
-    match user {
-        Some(user) => {
-            return Ok(Html(
-                state.pages.message_form.replace("{{ name }}", &user.name),
-            ));
+    let mut users = state.users.lock().await;
+    if let Some(user) = users.get_mut(&uuid) {
+        if Local::now().date_naive() == user.last_message.date_naive() {
+            return Ok(timeout_html(&state));
         }
-        None => return Err(StatusCode::NOT_FOUND),
-    };
+        return Ok(Html(
+            state.pages.message_form.replace("{{ name }}", &user.name),
+        ));
+    }
+
+    Err(StatusCode::NOT_FOUND)
 }
 
-#[derive(Debug, FromRow)]
-struct User {
-    name: String,
+async fn message_form_post(
+    State(state): State<AppState>,
+    Path(uuid): Path<String>,
+    ConnectInfo(addrs): ConnectInfo<SocketAddr>,
+    Form(form): Form<MessagePost>,
+) -> Result<impl IntoResponse, StatusCode> {
+    let mut users = state.users.lock().await;
+    if let Some(user) = users.get_mut(&uuid) {
+        // Send to timeout if user has already sent a message today
+        if Local::now().date_naive() == user.last_message.date_naive() {
+            return Ok(timeout_html(&state));
+        }
+
+        let resp = send_fax_to_printer(form.message, &user.name, addrs.to_string()).await;
+        if let Err(msg) = resp {
+            return Ok(Html(msg.to_string()));
+        }
+
+        user.last_message = Local::now();
+        return Ok(Html(state.pages.success));
+    }
+
+    Ok(Html("You don't exist :(".to_string()))
+}
+
+fn timeout_html(state: &AppState) -> Html<String> {
+    let now = Local::now().naive_local();
+    let tomorrow = NaiveDateTime::new(
+        now.date().checked_add_days(Days::new(1)).unwrap(),
+        NaiveTime::from_hms_opt(0, 0, 0).unwrap(),
+    );
+    let remaining_time = tomorrow - now;
+    let hours = remaining_time.num_hours();
+    let mins = (remaining_time - TimeDelta::hours(hours)).num_minutes();
+    dbg!(hours, mins);
+    return Html(
+        state
+            .pages
+            .timeout
+            .replace("{{ hours }}", &hours.to_string())
+            .replace("{{ mins }}", &mins.to_string()),
+    );
+}
+
+async fn send_fax_to_printer(
+    message: String,
+    username: &str,
+    ip: String,
+) -> Result<bool, reqwest::Error> {
+    let payload = FaxMessage {
+        time: Local::now(),
+        message,
+        from: username.to_string(),
+        ip: ip.to_string(),
+    };
+
+    let resp = reqwest::Client::new()
+        .post("http://kotpi.tabby-wall.ts.net:3000/fax")
+        .json(&payload)
+        .send()
+        .await?;
+    let status = resp.status();
+    dbg!(status);
+    Ok(status.is_success())
 }
 
 async fn timeout_page(State(state): State<AppState>) -> impl IntoResponse {
     return Html(state.pages.timeout);
 }
 
-async fn make_db(pool: &Pool<Sqlite>) {
-    sqlx::query(
-        r#"
-        CREATE TABLE IF NOT EXISTS users (
-            id   TEXT PRIMARY KEY, -- UUID
-            name TEXT NOT NULL
-        )
-        "#,
-    )
-    .execute(pool)
-    .await
-    .unwrap();
+#[derive(Deserialize, Clone)]
+struct MessagePost {
+    message: String,
+}
+
+#[derive(Clone)]
+struct User {
+    name: String,
+    last_message: DateTime<Local>,
 }
 
 #[derive(Clone)]
 struct AppState {
-    db_pool: Pool<Sqlite>,
+    users: Arc<Mutex<HashMap<String, User>>>,
     pages: Pages,
 }
 
@@ -93,4 +182,5 @@ struct Pages {
     index: String,
     message_form: String,
     timeout: String,
+    success: String,
 }
