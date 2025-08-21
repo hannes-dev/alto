@@ -3,7 +3,7 @@ use axum::{
     extract::{ConnectInfo, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
-    routing::{get, post},
+    routing::get,
 };
 use chrono::{DateTime, Days, Duration, Local, NaiveDateTime, NaiveTime, TimeDelta};
 use serde::Deserialize;
@@ -103,6 +103,11 @@ async fn message_form_post(
             return Ok(timeout_html(&state));
         }
 
+        // 48 is line length
+        if form.message.len() > 48 * 20 {
+            return Ok(Html("ono that is too long".into()));
+        }
+
         let resp = send_fax_to_printer(form.message, &user.name, addrs.to_string()).await;
         if let Err(msg) = resp {
             return Ok(Html(msg.to_string()));
@@ -151,9 +156,7 @@ async fn send_fax_to_printer(
         .json(&payload)
         .send()
         .await?;
-    let status = resp.status();
-    dbg!(status);
-    Ok(status.is_success())
+    Ok(resp.status().is_success())
 }
 
 async fn timeout_page(State(state): State<AppState>) -> impl IntoResponse {
